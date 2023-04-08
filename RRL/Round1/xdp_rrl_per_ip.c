@@ -13,8 +13,8 @@
 #include <linux/ipv6.h>     /* for struct ipv6hdr  */
 #include <linux/in.h>       /* for IPPROTO_UDP     */
 #include <linux/udp.h>      /* for struct udphdr   */
-#include <bpf_helpers.h>    /* for bpf_get_prandom_u32() */
-#include <bpf_endian.h>     /* for __bpf_htons()   */
+#include "bpf_helpers.h"    /* for bpf_get_prandom_u32() */
+#include "bpf_endian.h"     /* for __bpf_htons()   */
 
 // do not use libc includes because this causes clang
 // to include 32bit headers on 64bit ( only ) systems.
@@ -295,7 +295,7 @@ int udp_dns_reply_v6(struct cursor *c, struct in6_addr *key)
  *  Recieve and parse request
  *  @var struct xdp_md
  */
-SEC("xdp-rrl-per-ip")
+SEC("xdp")
 int xdp_rrl_per_ip(struct xdp_md *ctx)
 {
 	// store variables
