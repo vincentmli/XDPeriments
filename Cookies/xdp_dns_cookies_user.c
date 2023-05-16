@@ -37,13 +37,13 @@ int main(int argc, char *argv[])
 	int opt = -1;
 
 	unsigned int ifindex = 0;
-	struct bpf_program *prog = NULL;
+//	struct bpf_program *prog = NULL;
 	struct bpf_object  *obj  = NULL;
 	struct bpf_map *exclude_v4 = NULL;
 	struct bpf_map *exclude_v6 = NULL;
 	const char *xdp_program_name = NULL;
-	int fd = -1, jmp_tbl_fd = -1;
-	uint32_t key = 0;
+	//int fd = -1, jmp_tbl_fd = -1;
+//	uint32_t key = 0;
 
 	while ((opt = getopt(argc, argv, "hi:4:6:")) != -1) {
 		switch(opt) {
@@ -86,38 +86,12 @@ int main(int argc, char *argv[])
 	else if (bpf_map__set_pin_path(exclude_v6, exclude_v6_pinpath))
 		fprintf(stderr, "ERROR: pinning " EXCLv6_TBL " to \"%s\"\n"
 		              , exclude_v6_pinpath);
-
 	else if (bpf_object__load(obj))
 		fprintf(stderr, "ERROR: loading BPF object file failed\n");
 
-	else if ((jmp_tbl_fd = bpf_object__find_map_fd_by_name(obj, JMP_TBL)) < 0)
-		fprintf(stderr, "ERROR: table " JMP_TBL " not found\n");
-
-	else bpf_object__for_each_program(prog, obj) {
-		xdp_program_name = bpf_program__section_name(prog);
-		
-		fd = bpf_program__fd(prog);
-		printf(JMP_TBL " entry: %d -> %s\n", key, xdp_program_name);
-		if (bpf_map_update_elem(jmp_tbl_fd, &key, &fd, BPF_ANY) < 0){
-			fprintf( stderr
-			       , "ERROR: making " JMP_TBL " entry for %s\n"
-			       , xdp_program_name);
-			fd = -1;
-			break;
-		}
-		key++;
-	}
-	if (fd < 0)
-		; /* earlier error */
-
-	else if (bpf_set_link_xdp_fd(ifindex, fd, 0))
-		fprintf(stderr, "ERROR: attaching xdp program to device\n");
-	else {
-		printf("%s successfully loaded and running on interface %s.\n"
-		      , xdp_program_name, ifname);
-		printf("Press Ctrl-C to stop and unload.\n");
-		while (true)
-			sleep(60);
-	}
+	printf("%s successfully loaded and running on interface %s.\n" , xdp_program_name, ifname);
+	printf("Press Ctrl-C to stop and unload.\n");
+	while (true)
+		sleep(60);
 	return EXIT_FAILURE;
 }

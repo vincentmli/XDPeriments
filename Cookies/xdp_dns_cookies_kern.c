@@ -79,19 +79,31 @@ typedef __u32 uint32_t;
 typedef __u64 uint64_t;
 #define memcpy __builtin_memcpy
 
+#ifndef __section
+# define __section(NAME) __attribute__((section(NAME), used))
+#endif
+#ifndef __uint
+# define __uint(name, val) int(*(name))[val]
+#endif
+#ifndef __type
+#define __type(name, val) typeof(val) *(name)
+#endif
+
 #include "siphash4bpf.c"
 
+/*
 struct bpf_map_def SEC("maps") jmp_table = {
         .type = BPF_MAP_TYPE_PROG_ARRAY,
         .key_size = sizeof(uint32_t),
         .value_size = sizeof(uint32_t),
         .max_entries = 5
 };
+*/
 
 #define DO_RATE_LIMIT_IPV6 0
 #define DO_RATE_LIMIT_IPV4 1
-#define COOKIE_VERIFY_IPv6 2
-#define COOKIE_VERIFY_IPv4 3
+#define COOKIE_VERIFY_IPv6 0
+#define COOKIE_VERIFY_IPv4 1
 
 struct meta_data {
 	uint16_t eth_proto;
@@ -273,21 +285,33 @@ struct meta_data {
 #define RRL_MASK126          RRL_MASK30
 #define RRL_MASK127          RRL_MASK31
 
-struct bpf_map_def SEC("maps") exclude_v4_prefixes = {
-	.type = BPF_MAP_TYPE_LPM_TRIE,
-	.key_size = sizeof(struct bpf_lpm_trie_key) + sizeof(uint32_t),
-	.value_size = sizeof(uint64_t),
-	.max_entries = 10000,
-	.map_flags = BPF_F_NO_PREALLOC
+struct ipv4_key {
+	struct   bpf_lpm_trie_key lpm_key;
+	uint8_t  ipv4[4];
 };
 
-struct bpf_map_def SEC("maps") exclude_v6_prefixes = {
-	.type = BPF_MAP_TYPE_LPM_TRIE,
-	.key_size = sizeof(struct bpf_lpm_trie_key) + 8, // first 64 bits
-	.value_size = sizeof(uint64_t),
-	.max_entries = 10000,
-	.map_flags = BPF_F_NO_PREALLOC
-};
+struct {
+	__uint(type,  BPF_MAP_TYPE_LPM_TRIE);
+	__type(key,   struct ipv4_key);
+	__type(value, uint64_t);
+	__uint(max_entries, 10000);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+	__uint(map_flags, BPF_F_NO_PREALLOC);
+} exclude_v4_prefixes __section(".maps");
+
+struct ipv6_key {
+	struct   bpf_lpm_trie_key lpm_key;
+	uint64_t ipv6;
+} __attribute__((packed));
+
+struct {
+	__uint(type,  BPF_MAP_TYPE_LPM_TRIE);
+	__type(key,   struct ipv6_key);
+	__type(value, uint64_t);
+	__uint(max_entries, 10000);
+        __uint(pinning, LIBBPF_PIN_BY_NAME);
+        __uint(map_flags, BPF_F_NO_PREALLOC);
+} exclude_v6_prefixes __section(".maps");
 
 /*
  *  Store the time frame
@@ -297,19 +321,19 @@ struct bucket {
 	uint64_t n_packets;
 };
 
-struct bpf_map_def SEC("maps") state_map = {
-	.type = BPF_MAP_TYPE_PERCPU_HASH,
-	.key_size = sizeof(uint32_t),
-	.value_size = sizeof(struct bucket),
-	.max_entries = RRL_SIZE
-};
+struct {
+	__uint(type,  BPF_MAP_TYPE_PERCPU_HASH);
+	__type(key,   uint32_t);
+	__type(value, struct bucket);
+	__uint(max_entries, RRL_SIZE);
+} state_map __section(".maps");
 
-struct bpf_map_def SEC("maps") state_map_v6 = {
-	.type = BPF_MAP_TYPE_PERCPU_HASH,
-	.key_size = sizeof(struct in6_addr),
-	.value_size = sizeof(struct bucket),
-	.max_entries = RRL_SIZE
-};
+struct {
+	__uint(type,  BPF_MAP_TYPE_PERCPU_HASH);
+	__type(key,   sizeof(struct in6_addr));
+	__type(value, struct bucket);
+	__uint(max_entries, RRL_SIZE);
+} state_map_v6 __section(".maps");
 
 
 /** Copied from the kernel module of the base03-map-counter example of the
@@ -536,7 +560,7 @@ do_rate_limit(struct udphdr *udp, struct dnshdr *dns, struct bucket *b)
 }
 
 
-SEC("xdp-do-rate-limit-ipv6")
+SEC("xdp")
 int xdp_do_rate_limit_ipv6(struct xdp_md *ctx)
 {
 	struct cursor     c;
@@ -599,7 +623,7 @@ int xdp_do_rate_limit_ipv6(struct xdp_md *ctx)
 	return XDP_PASS;
 }
 
-SEC("xdp-do-rate-limit-ipv4")
+SEC("xdp")
 int xdp_do_rate_limit_ipv4(struct xdp_md *ctx)
 {
 	struct cursor     c;
@@ -644,6 +668,19 @@ int xdp_do_rate_limit_ipv4(struct xdp_md *ctx)
 	return XDP_PASS;
 }
 
+struct {
+        __uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+        __uint(max_entries, 3);
+        __uint(key_size, sizeof(uint32_t));
+        __uint(value_size, sizeof(uint32_t));
+        __array(values, int (void *));
+} jmp_rate_table SEC(".maps") = {
+        .values = {
+                [DO_RATE_LIMIT_IPV6] = (void *)&xdp_do_rate_limit_ipv6,
+                [DO_RATE_LIMIT_IPV4] = (void *)&xdp_do_rate_limit_ipv4,
+        },
+};
+
 static __always_inline
 int cookie_verify_ipv6(struct cursor *c, struct ipv6hdr *ipv6)
 {
@@ -656,7 +693,7 @@ int cookie_verify_ipv6(struct cursor *c, struct ipv6hdr *ipv6)
 	return hash == ((uint64_t *)c->pos)[2];
 }
 
-SEC("xdp-cookie-verify-ipv6")
+SEC("xdp")
 int xdp_cookie_verify_ipv6(struct xdp_md *ctx)
 {
 	struct cursor     c;
@@ -711,7 +748,7 @@ int xdp_cookie_verify_ipv6(struct xdp_md *ctx)
 		rdata_len -= opt_len;
 		c.pos += opt_len;
 	}
-	bpf_tail_call(ctx, &jmp_table, DO_RATE_LIMIT_IPV6);
+	bpf_tail_call(ctx, &jmp_rate_table, DO_RATE_LIMIT_IPV6);
 	return XDP_PASS;
 }
 
@@ -728,7 +765,7 @@ int cookie_verify_ipv4(struct cursor *c, struct iphdr *ipv4)
 	return hash == ((uint64_t *)c->pos)[2];
 }
 
-SEC("xdp-cookie-verify-ipv4")
+SEC("xdp")
 int xdp_cookie_verify_ipv4(struct xdp_md *ctx)
 {
 	struct cursor     c;
@@ -783,12 +820,24 @@ int xdp_cookie_verify_ipv4(struct xdp_md *ctx)
 		rdata_len -= opt_len;
 		c.pos += opt_len;
 	}
-	bpf_tail_call(ctx, &jmp_table, DO_RATE_LIMIT_IPV4);
+	bpf_tail_call(ctx, &jmp_rate_table, DO_RATE_LIMIT_IPV4);
 	return XDP_PASS;
 }
 
+struct {
+        __uint(type, BPF_MAP_TYPE_PROG_ARRAY);
+        __uint(max_entries, 3);
+        __uint(key_size, sizeof(uint32_t));
+        __uint(value_size, sizeof(uint32_t));
+        __array(values, int (void *));
+} jmp_cookie_table SEC(".maps") = {
+        .values = {
+                [COOKIE_VERIFY_IPv6] = (void *)&xdp_cookie_verify_ipv6,
+                [COOKIE_VERIFY_IPv4] = (void *)&xdp_cookie_verify_ipv4,
+        },
+};
 
-SEC("xdp-dns-cookies")
+SEC("xdp")
 int xdp_dns_cookies(struct xdp_md *ctx)
 {
 	struct meta_data *md = (void *)(long)ctx->data_meta;
@@ -842,7 +891,7 @@ int xdp_dns_cookies(struct xdp_md *ctx)
 			return XDP_ABORTED; // Return FORMERR?
 
 		if (dns->arcount == 0) {
-			bpf_tail_call(ctx, &jmp_table, DO_RATE_LIMIT_IPV6);
+			bpf_tail_call(ctx, &jmp_rate_table, DO_RATE_LIMIT_IPV6);
 			return XDP_PASS;
 		}
 		if (c.pos + 1 > c.end
@@ -850,7 +899,7 @@ int xdp_dns_cookies(struct xdp_md *ctx)
 			return XDP_ABORTED; // Return FORMERR?
 
 		md->opt_pos = c.pos + 1 - (void *)(ipv6 + 1);
-		bpf_tail_call(ctx, &jmp_table, COOKIE_VERIFY_IPv6);
+		bpf_tail_call(ctx, &jmp_cookie_table, COOKIE_VERIFY_IPv6);
 		
 	} else if (md->eth_proto == __bpf_htons(ETH_P_IP)) {
 		if (!(ipv4 = parse_iphdr(&c))
@@ -884,7 +933,7 @@ int xdp_dns_cookies(struct xdp_md *ctx)
 			return XDP_ABORTED; // return FORMERR?
 
 		if (dns->arcount == 0) {
-			bpf_tail_call(ctx, &jmp_table, DO_RATE_LIMIT_IPV4);
+			bpf_tail_call(ctx, &jmp_rate_table, DO_RATE_LIMIT_IPV4);
 			return XDP_PASS;
 		}
 		if (c.pos + 1 > c.end
@@ -892,7 +941,7 @@ int xdp_dns_cookies(struct xdp_md *ctx)
 			return XDP_ABORTED; // Return FORMERR?
 
 		md->opt_pos = c.pos + 1 - (void *)(ipv4 + 1);
-		bpf_tail_call(ctx, &jmp_table, COOKIE_VERIFY_IPv4);
+		bpf_tail_call(ctx, &jmp_cookie_table, COOKIE_VERIFY_IPv4);
 	}
 	return XDP_PASS;
 }

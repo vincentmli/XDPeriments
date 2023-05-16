@@ -4,19 +4,16 @@ LIBS=-lbpf -lelf -lz
 
 DEV=lo
 
-CFLAGS=-O3 -Wall -Werror -I../libbpf/src -D'DEFAULT_IFACE="$(DEV)"'
+CFLAGS=-O3 -g -Wall -Werror -I../libbpf/src -D'DEFAULT_IFACE="$(DEV)"'
 
 XDP_PROG=xdp_dns_cookies_kern.o
 
-all: $(XDP_PROG) xdp_dns_cookies_user xdp_rrl_vipctl
+all: $(XDP_PROG) xdp_dns_cookies_user
 
 $(XDP_PROG): xdp_dns_cookies_kern.c siphash4bpf.c
 	$(CC) -target bpf $(CFLAGS) -c -o $@ $<
 
 xdp_dns_cookies_user: xdp_dns_cookies_user.c
-	$(CC) -static $(CFLAGS) -o $@ $< $(LDFLAGS) $(LIBS)
-
-xdp_rrl_vipctl: xdp_rrl_vipctl.c
 	$(CC) -static $(CFLAGS) -o $@ $< $(LDFLAGS) $(LIBS)
 
 clean: unmount
