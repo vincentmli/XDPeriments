@@ -4,11 +4,11 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <assert.h>
-#include <bpf.h>
-#include <libbpf.h>
+#include <bpf/bpf.h>
+#include <bpf/libbpf.h>
 
 #ifndef DEFAULT_IFACE
-#define DEFAULT_IFACE "eth0"
+#define DEFAULT_IFACE "lo"
 #endif
 #define DEFAULT_IPv4_VIP_PINPATH "/sys/fs/bpf/rrl_exclude_v4_prefixes"
 #define DEFAULT_IPv6_VIP_PINPATH "/sys/fs/bpf/rrl_exclude_v6_prefixes"

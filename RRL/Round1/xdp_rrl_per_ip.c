@@ -30,10 +30,10 @@ typedef __u64 uint64_t;
 #define DNS_PORT      53
 
 // 1000000000 nanoseconds is 1 second
-#define FRAME_SIZE 	  1000000000
+#define FRAME_SIZE	  1000000000
 
 // QPS before RRL hits in
-#define THRESHOLD  	  1000
+#define THRESHOLD	  1000
 /*
  *  End defines
  */

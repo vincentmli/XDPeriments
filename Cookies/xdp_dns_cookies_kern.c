@@ -68,8 +68,8 @@
 #include <linux/ipv6.h>     /* for struct ipv6hdr  */
 #include <linux/in.h>       /* for IPPROTO_UDP     */
 #include <linux/udp.h>      /* for struct udphdr   */
-#include <bpf_helpers.h>
-#include <bpf_endian.h>
+#include "bpf_helpers.h"
+#include "bpf_endian.h"
 
 // do not use libc includes because this causes clang
 // to include 32bit headers on 64bit ( only ) systems.
