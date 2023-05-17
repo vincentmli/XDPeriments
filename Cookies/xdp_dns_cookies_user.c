@@ -4,8 +4,10 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <assert.h>
-#include <bpf/bpf.h>
-#include <bpf/libbpf.h>
+//#include <bpf/bpf.h>
+//#include <bpf/libbpf.h>
+#include "bpf.h"
+#include "libbpf.h"
 
 #ifndef DEFAULT_IFACE
 #define DEFAULT_IFACE "lo"
@@ -37,13 +39,12 @@ int main(int argc, char *argv[])
 	int opt = -1;
 
 	unsigned int ifindex = 0;
-//	struct bpf_program *prog = NULL;
+	struct bpf_program *prog = NULL;
 	struct bpf_object  *obj  = NULL;
 	struct bpf_map *exclude_v4 = NULL;
 	struct bpf_map *exclude_v6 = NULL;
 	const char *xdp_program_name = NULL;
-	//int fd = -1, jmp_tbl_fd = -1;
-//	uint32_t key = 0;
+	int fd = -1;
 
 	while ((opt = getopt(argc, argv, "hi:4:6:")) != -1) {
 		switch(opt) {
@@ -89,9 +90,25 @@ int main(int argc, char *argv[])
 	else if (bpf_object__load(obj))
 		fprintf(stderr, "ERROR: loading BPF object file failed\n");
 
-	printf("%s successfully loaded and running on interface %s.\n" , xdp_program_name, ifname);
-	printf("Press Ctrl-C to stop and unload.\n");
-	while (true)
-		sleep(60);
+	prog = bpf_object__find_program_by_name(obj, "xdp_dns_cookies");
+	if (!prog)
+		fprintf(stderr, "ERROR: xdp_dns_cookies XDP program not found\n");
+
+        fd = bpf_program__fd(prog);
+	xdp_program_name = bpf_program__section_name(prog);
+
+	if (fd < 0)
+		; /* earlier error */
+
+	else if (bpf_xdp_attach(ifindex, fd, 0, NULL))
+		fprintf(stderr, "ERROR: attaching xdp program to device\n");
+	else {
+		printf("%s successfully loaded and running on interface %s.\n"
+		      , xdp_program_name, ifname);
+		printf("Press Ctrl-C to stop and unload.\n");
+		while (true)
+			sleep(60);
+	}
+
 	return EXIT_FAILURE;
 }

@@ -1,4 +1,4 @@
-CC=clang
+CC=clang -v
 LDFLAGS=-L../libbpf/src
 LIBS=-lbpf -lelf -lz
 
